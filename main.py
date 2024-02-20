@@ -66,7 +66,7 @@ Model.train()
 
 
 # Create Optimizer and Loss_fn
-optimizers=torch.optim.Adam(params=Model.parameters(),lr=config.LEARNING_RATE,betas=config.LEARNING_RATE,eps=config.EPSILON)
+optimizers=torch.optim.Adam(params=Model.parameters(),lr=config.LEARNING_RATE,betas=config.BETAS,eps=config.EPSILON)
 loss_fn=torch.nn.CrossEntropyLoss()
 
 
