@@ -105,6 +105,7 @@ if config.PREDICTION==True:
     translate=prediction.prediction(sentence=config.PREDICTION_SENTENCE,
                                     Model=Model,
                                     word2idx_in=W2IDX_IN,
+                                    word2_idx_out=W2IDX_OUT,
                                     padding_len=config.MAX_LEN_SEQ,
                                     pad_idx=config.PAD_IDX,
                                     devices=devices,

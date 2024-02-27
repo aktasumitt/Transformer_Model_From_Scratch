@@ -1,6 +1,6 @@
 import torch,nltk
 
-def prediction(sentence,Model,word2idx_in,padding_len,pad_idx,devices,batch_size):
+def prediction(sentence,Model,word2idx_in,word2_idx_out,padding_len,pad_idx,devices,batch_size):
     
     inputs=[]
     input_padded=[]
@@ -22,7 +22,7 @@ def prediction(sentence,Model,word2idx_in,padding_len,pad_idx,devices,batch_size
     pred_list=[]
     
     # IDX TO WORD 
-    idx2word_out={v:k for k,v in word2idx_in.items()}
+    idx2word_out={v:k for k,v in word2_idx_out.items()}
     
     for token_pred in pred[0]:
         pred_list.append(idx2word_out[token_pred.item()])
