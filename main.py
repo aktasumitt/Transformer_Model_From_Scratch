@@ -1,4 +1,4 @@
-import dataset,Decoder,Encoder,Train,transformer,config,callbakcs,torch,test,prediction
+import dataset,Decoder,Encoder,Train,transformer,config,callbakcs,torch,test,prediction,Embedding
 import warnings
 from torch.utils.tensorboard import SummaryWriter
 
@@ -50,6 +50,7 @@ Train_dataloader,Valid_Dataloader,Test_Dataloader=dataset.Dataloader_fn(train=Tr
 Model=transformer.Transformer_Model(d_model=config.D_MODEL,
                                     Encoder_Model=Encoder.Encoder_Model,
                                     Decoder_Model=Decoder.Decoder_Model,
+                                    Embeddig_Model=Embedding.Embedding_Model,
                                     vocab_size_encoder=len(W2IDX_IN),
                                     vocab_size_decoder=len(W2IDX_OUT),
                                     num_heads=config.NUM_HEADS,
@@ -106,7 +107,8 @@ if config.PREDICTION==True:
                                     word2idx_in=W2IDX_IN,
                                     padding_len=config.MAX_LEN_SEQ,
                                     pad_idx=config.PAD_IDX,
-                                    devices=devices)
+                                    devices=devices,
+                                    batch_size=config.BATCH_SIZE)
 
 
 

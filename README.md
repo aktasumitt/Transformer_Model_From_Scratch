@@ -14,11 +14,13 @@ TensorBoard, along with saving training or prediction images, allows you to save
 ## Model:
 - Although originally designed for translation, the Transformer serves as the foundation for many current generator models and can produce results very close to human-like. Therefore, it represents a revolutionary advancement.
 
+## Embedding:
+- Before input tokenized sentences are fed into the both encoder and decoder model, they are passed through an embedding layer, to which positional encoding values are added.
+- - Since the order of words in a sentence is important, the positional encoding layer maintains these sequences using sine and cosine functions.
+
 #### Encoder:
 - The Transformer encoder and decoder are advanced sequence-to-sequence generator models.
-- Before input tokenized sentences are fed into the both encoder and decoder model, they are passed through an embedding layer, to which positional encoding values are added.
-- Since the order of words in a sentence is important, the positional encoding layer maintains these sequences using sine and cosine functions.
-- Subsequently, this output is passed to the encoder layer, which consists of a multi-head attention and a feed-forward layer in sequence, with layer normalization and residual connections in between.
+- Subsequently, Embedding output is passed to the encoder layer, which consists of a multi-head attention and a feed-forward layer in sequence, with layer normalization and residual connections in between.
 - Multi-head attention is the application of self-attention at multiple steps, and the output is concatenated.
 - Through these operations, we effectively capture the connections between words. 
 - The output of the encoder is used in computing the query and value for the decoder's multi-head attention.
@@ -27,10 +29,10 @@ TensorBoard, along with saving training or prediction images, allows you to save
 - The decoder consists of masked multi-head attention, multi-head attention, and feed-forward layers in sequence, with layer normalization and residual connections in between.
 -  The decoder follows an autoregressive structure, meaning the outputs are calculated by adding the input values at each step. 
 -  In the masked step, a large or infinite value is selected to mask the data during self-attention. This is the difference from multi-head attention.
--  The output generated in the decoder is passed through a linear layer and then softmax to predict the next word, which is appended to the input to form the new input. 
+-  The output generated in the decoder is passed through a linear layer and then softmax to predict the next word.
 -  This process continues until a stop token is appended to the end of the sentence.
 -  Instead, teacher forcing can be used, where the model adds the correct tokens to the input at each step instead of its own outputs. This allows us to reach the correct result faster
-- After reaching the stop token, the sentence is taken, and the loss is calculated for the training process to continue in a classic manner. 
+- After reaching the stop token, the sentence is taken, and the loss is calculated with the last decoder output for the training process to continue in a classic manner. 
 - The Encoder and Decoder iterate multiple times consecutively, typically 6 times as mentioned in the paper.
 
 #### For More details:
@@ -43,7 +45,7 @@ TensorBoard, along with saving training or prediction images, allows you to save
 - For training, I used Turkish sentence data as input and English translations as output.
 - I employed the Adam optimizer and CrossEntropyLoss for loss calculation. 
 - The Turkish tokenized data is first fed into the encoder to produce output, then padded tensors with ("1") as the start token and the rest padded with ("0") are passed to the decoder.
-- The generated outputs are then summed up, and the loss is calculated in the loss function. 
+- The generated last output are then summed up, and the loss is calculated in the loss function. 
 - Since we used teacher forcing, instead of appending the outputs to the input data, we continued training by appending the actual expected outputs, which accelerates convergence to the correct result
 
 ## Prediction:

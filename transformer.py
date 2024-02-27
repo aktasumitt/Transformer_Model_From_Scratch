@@ -5,6 +5,7 @@ from Decoder import Decoder_Model
 
 
 
+
 class Transformer_Model(nn.Module):
     
     """
@@ -14,6 +15,7 @@ class Transformer_Model(nn.Module):
     
     def __init__(self,Encoder_Model,
                 Decoder_Model,
+                Embeddig_Model,
                 d_model,
                 vocab_size_encoder,
                 vocab_size_decoder,
@@ -30,69 +32,73 @@ class Transformer_Model(nn.Module):
         super(Transformer_Model,self).__init__()
         
         self.devices=devices
+        self.max_len_encoder=max_seq_len_encoder
         self.max_len_decoder=max_seq_len_decoder
         self.batch_size=batch_size
-        self.max_len_decoder=max_seq_len_decoder
         self.stop_token=stop_token
-
-        self.encoder=Encoder_Model(d_model=d_model,vocab_size=vocab_size_encoder,num_heads=num_heads,pad_idx=pad_idx,
-                                   max_seq_len=max_seq_len_encoder,devices=devices,N_repeat=Nx)
+        self.vocab_size_decoder=vocab_size_decoder
         
-        self.decoder=Decoder_Model(d_model=d_model,vocab_size=vocab_size_decoder,num_heads=num_heads,pad_idx=pad_idx,
-                                   max_seq_len=max_seq_len_decoder,devices=devices,batch_size=batch_size,masking_value=masking_value
-                                   ,N_repeat=Nx)
+        self.encoder_embedding=Embeddig_Model(vocab_size=vocab_size_encoder,d_model=d_model,pad_idx=pad_idx,
+                                              devices=devices,max_seq_len=max_seq_len_encoder)
+        self.decoder_embedding=Embeddig_Model(vocab_size=vocab_size_decoder,d_model=d_model,pad_idx=pad_idx,
+                                              devices=devices,max_seq_len=max_seq_len_decoder)
         
+        self.encoder=nn.ModuleList([Encoder_Model(d_model=d_model,num_heads=num_heads,devices=devices,batch_size=batch_size) for i in range(Nx)])
+        self.decoder=nn.ModuleList([Decoder_Model(devices=devices,d_model=d_model,num_heads=num_heads,batch_size=batch_size,masking_value=masking_value) for i in range(Nx)])
         
-        self.linear=nn.Linear(d_model*max_seq_len_decoder,vocab_size_decoder)
+        self.linear=nn.Linear(d_model,vocab_size_decoder)
         
         
     def forward(self,encoder_input,decoder_target=None):
         stop_step=0
         
-        # input decoder
-        input_decoder=torch.zeros((self.batch_size,self.max_len_decoder),dtype=torch.int).to(self.devices)
-        input_decoder[:,0]=1 # Add Start token <SOS> to input decoder sentence = [1,0,0,0,0...]
+        # input decoder is start token <SOS>
+        input_decoder=torch.ones((self.batch_size,1),dtype=torch.int).to(self.devices)
         
-        output_list=[]
+        # encoder embedding
+        encoder_embed=self.encoder_embedding(encoder_input)
         
-        # Train Encoder Model
-        encoder_out=self.encoder(encoder_input)
+        # Train Encoder Model with Module List
+        for encoder in self.encoder:
+            encoder_out=encoder(encoder_embed)
         
-        for step in range(0,self.max_len_decoder-1):
+        for step in range(0,self.max_len_decoder-1):  # we train max_len times
+                            
+            # Train Decoder Embedding
+            decoder_embed=self.decoder_embedding(input_decoder)
             
-                input_decoder_clone=input_decoder.clone()
+            for decoder in self.decoder:
+                decoder_out=decoder((encoder_out,decoder_embed))
+            
+            out=self.linear(decoder_out)
                 
-                # Train Decoder Model
-                decoder_out=self.decoder((encoder_out,input_decoder_clone))
-                out=self.linear(decoder_out)
-                
-                # Output list        
-                output_list.append(out)
-                
-
-                # FOR THE PREDICTION
-                if decoder_target==None:
+            # FOR THE PREDICTION
+            if decoder_target==None:
                     
-                    # Prediction words for adding input_encoder
-                    out_soft=torch.nn.functional.softmax(out,dim=-1)
-                    _,pred=torch.max(out_soft,-1)
+                # Prediction last words for changing input_encoder
+                out_soft=torch.nn.functional.softmax(out[:,step,:],dim=-1)
+                _,pred=torch.max(out_soft,-1)
                     
-                    # add pred words to input_decoder .       
-                    input_decoder[:,step+1] = pred
+                # change pred words to input_decoder .       
+                input_decoder=torch.concat([input_decoder, pred.unsqueeze(1)],dim=-1)
                 
+                    
+                # if after word is stop token, it will break.
+                stop_step+=(pred==self.stop_token).sum().item()
+                    
+                if stop_step==self.batch_size:
+                    break
                 
                 # FOR THE TRAINING
-                else:
-                    input_decoder[:,step+1]= decoder_target[:,step]
+            else:
+                input_decoder=torch.concat([input_decoder,decoder_target[:,step].unsqueeze(1)],dim=-1)
                     
-                    # if after word is stop token, it will break.
-                    stop_step+=(decoder_target[:,step]==self.stop_token).sum().item()
+                # if after word is stop token, it will break.
+                stop_step+=(decoder_target[:,step]==self.stop_token).sum().item()
                     
-                    if stop_step==self.batch_size:
-                        break
-                    
-                
-        # return output list and step for calculating loss and backward
-        return torch.stack(output_list).permute(1,0,2),step
+                if stop_step==self.batch_size:
+                    break
+        
+        return out,step
         
         

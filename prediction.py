@@ -1,6 +1,6 @@
 import torch,nltk
 
-def prediction(sentence,Model,word2idx_in,padding_len,pad_idx,devices):
+def prediction(sentence,Model,word2idx_in,padding_len,pad_idx,devices,batch_size):
     
     inputs=[]
     input_padded=[]
@@ -14,7 +14,7 @@ def prediction(sentence,Model,word2idx_in,padding_len,pad_idx,devices):
 
     # To give model
     with torch.no_grad():
-        out,step=Model(torch.tensor(input_padded).to(devices))
+        out,step=Model(torch.tensor(input_padded).repeat(batch_size,1).to(devices))
     
     # Prediction
     _,pred=torch.max(out,-1)
