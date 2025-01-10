@@ -44,7 +44,7 @@ TensorBoard, along with saving training or prediction images, allows you to save
 - However, when tested on a small dataset with low epochs, the model was working smoothly. 
 - For training, I used Turkish sentence data as input and English translations as output.
 - I employed the Adam optimizer and CrossEntropyLoss for loss calculation. 
-- The Turkish tokenized data is first fed into the encoder to produce output, then padded tensors with ("1") as the start token and the rest padded with ("0") are passed to the decoder.
+- The Turkish tokenized data is first fed into the encoder to produce output, then padded English tokenized tensors with ("1") as the start token and the rest padded with ("0") are passed to the decoder.
 - The generated last output are then summed up, and the loss is calculated in the loss function. 
 - Since we used teacher forcing, instead of appending the outputs to the input data, we continued training by appending the actual expected outputs, which accelerates convergence to the correct result
 
@@ -54,6 +54,6 @@ TensorBoard, along with saving training or prediction images, allows you to save
 
 ## Usage: 
 - You can train the model by setting "TRAIN" to "True" in config file and your checkpoint will save in "config.CALLBACKS_PATH"
-- Tensorboard files will created into "runs" folder during training time.
-- Then you can generate the translate sentences by setting the "LOAD_CALLBACKS" and "TEST" values to "True" in the config file.
+- Tensorboard files will created into "Tensorboard" folder during training time.
+- Then you can generate the translate sentences by setting the "LOAD_CHECKPOINT" and "TEST" values to "True" in the config file.
 

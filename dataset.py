@@ -1,145 +1,164 @@
-import nltk,torch
-from torch.utils.data import Dataset, DataLoader, random_split
-from torchtext.transforms import VocabTransform
+import torch
+import nltk
 from torchtext.vocab import build_vocab_from_iterator
-from torch.utils.data import Dataset
+from torchtext.transforms import VocabTransform
+from torch.utils.data import Dataset,DataLoader,random_split
 
-
-# Loading Dataa
-def Loading_Dataset(Text_Path, start_range: int = 0, stop_range: int = -1):
-
-    #   This tokenizer need to your text dataset's sentences of languages seperate with tab (\\t)
-    #   For Example: (Ben bir öğrenciyim. \\t I am a student.)
-
-    print("Dataset is loading...")
-    with open(Text_Path, "r", encoding="utf-8") as dosya:
-        Text = dosya.readlines()
-
-    Text = Text[start_range:stop_range]
-
-    Sentences1 = []
-    Sentences2 = []
-
-    for i in Text:
-        Sentences1.append(i.split("\t")[1][:-1])
-        Sentences2.append(i.split("\t")[0])
-
-    return Sentences1, Sentences2
-
-
-
-
-# Preproccess text datas
-class Preproccess():
-
-    """
-    We can tokenize and pad text datas with this class. 
-    """
-
-    def __init__(self, max_len: int, language: str, start_symbol: str = None, stop_symbol: str = None, pad_symbol: str = None):
-
-        self.start_symbol = start_symbol
-        self.stop_symbol = stop_symbol
-        self.pad_symbol = pad_symbol
-        self.max_len = max_len
-        self.language = language
-
-    # Tokenize Texts
-    def Tokenize(self, Text):
-
-        Tokenized = []
-
-        for i in Text:
-            timestep_list = nltk.tokenize.word_tokenize(
-                i.lower(), language=self.language)
-
-            if self.start_symbol != None:
-                timestep_list.insert(0, self.start_symbol)
-            if self.stop_symbol != None:
-                timestep_list.append(self.stop_symbol)
-
-            Tokenized.append(timestep_list)
-
-        return Tokenized
-
+# Loading Dataset
+def Loading_Dataset(text_path:str,start_range:int=0,stop_range:int=10000):
     
-    # Padding if u want
-    def Padding_Text(self, Tokenized_data):
-
-        padded_list = []
-        for i in Tokenized_data:
-            padded_list.append(list(nltk.pad_sequence(sequence=i, n=(
-                self.max_len-len(i)+1), pad_right=True, pad_left=False, right_pad_symbol=self.pad_symbol)))
-        return padded_list
-
     
-    # call class
-    def __call__(self, text):
+    with open(text_path,"r",encoding="utf-8") as dosya:
         
-        print(f"{self.language} Texts are Preprocessing...")
+        Text=dosya.readlines()
+    
+    English_Sentences_List=[]
+    Turkish_sentence_list=[]
+    MAX_LEN=0
+    
+    print("Dataset is loading...\n")
+    
+    for step,sentences in enumerate(Text):
+        
+        if step>=start_range and step<=stop_range:
+            
+            english_sentence,turkish_sentence=sentences.split("\t")
+            
+            # Calculate Max Len and Append list the sentences
+            MAX_LEN=max(len(english_sentence),len(turkish_sentence),MAX_LEN) # calculate maximum length of sentences
+                
+            English_Sentences_List.append(english_sentence)
+            Turkish_sentence_list.append(turkish_sentence[:-1])
+    
+    return Turkish_sentence_list,English_Sentences_List,MAX_LEN
 
-        data_prep = self.Tokenize(Text=text)
-
-        if self.pad_symbol != None:
-            data_prep = self.Padding_Text(data_prep)
-
-        return data_prep
 
 
+# Tokenize sentences. 
+# Add; pad, start and stop symbol 
+class Preprocessing_Text():
+    def __init__(self,language:str,max_len:int,start_symbol:str=None,stop_symbol:str=None,pad_symbol:str=None):
+        
+        self.language=language
+        self.max_len=max_len
+        self.start_sym=start_symbol
+        self.stop_sym=stop_symbol
+        self.pad_sym=pad_symbol
+        
+    def Tokenize(self,text_list):
+        
+        Tokenized_list=[]
+        
+        for sentence in text_list:
+            
+            # Tokenize sentences
+            tokenize=nltk.tokenize.word_tokenize(sentence.lower(),language=self.language)
+            
+            # Add start symbol in first index
+            if self.start_sym!=None:
+                tokenize.insert(0,self.start_sym)
+            
+            # Add stop symbol in last index
+            if self.stop_sym!=None:
+                tokenize.append(self.stop_sym)
+                
+            Tokenized_list.append(tokenize)
+        
+        return Tokenized_list
+
+    
+    def Padding(self,tokenized_list):
+        
+        Padding_list=[]
+        
+        # Add pad symbol till max length
+        for sentence in tokenized_list:
+            
+            pad_len=self.max_len-len(sentence)+1
+            padded=nltk.pad_sequence(sentence,n=pad_len,pad_right=True,right_pad_symbol=self.pad_sym)
+            
+            Padding_list.append(list(padded))
+        
+        return Padding_list
+    
+    
+    def __call__(self,text):
+        tokenized=self.Tokenize(text_list=text)
+        padded=self.Padding(tokenized)
+    
+        return padded
 
 
-class Create_Dataset(Dataset):
-    def __init__(self, tokenized_data_in, tokenized_data_out):
-        super().__init__()
-        self.tokenized_data_in = tokenized_data_in
-        self.tokenized_data_out = tokenized_data_out
 
-        self.vocab_in = build_vocab_from_iterator(
-            self.tokenized_data_in, special_first=True, specials=["<PAD>", "<SOS>", "<EOS>", "<UNK>"])
-        self.vocab_out = build_vocab_from_iterator(
-            self.tokenized_data_out, special_first=True, specials=["<PAD>", "<SOS>", "<EOS>", "<UNK>"])
+# Tokenized word to idx
+class WORD2IDX():
+    
+    def __init__(self,start_sym:str=None,stop_sym:str=None,pad_sym:str=None,unknown_sym:str=None):
+        
+        self.start_sym=start_sym
+        self.stop_sym=stop_sym
+        self.pad_sym=pad_sym
+        
+    def Word2idx(self,text):
+        
+        if self.start_sym==None and self.stop_sym==None:
+            special_tokens=[self.pad_sym]
+        else:
+            special_tokens=[self.pad_sym,self.start_sym,self.stop_sym]
+        
+        builded=build_vocab_from_iterator(text,special_first=True,specials=special_tokens)
+        Tokenized_text=VocabTransform(builded)(text)
+        WORD2IDX_dict=builded.get_stoi()
+        
+        return Tokenized_text,WORD2IDX_dict
+    
+    def __call__(self,text):
+        
+        Tokenized,WORD2IDX_DİCT=self.Word2idx(text)
+        return Tokenized,WORD2IDX_DİCT
+        
 
-        self.data_in = VocabTransform(self.vocab_in)(self.tokenized_data_in)
-        self.data_out = VocabTransform(self.vocab_out)(self.tokenized_data_out)
 
+# Dataset Creating
+class Dataset(Dataset):
+    def __init__(self,input_data,word2idx_in,output_data:None,word2idx_out:None):
+        super(Dataset,self).__init__()
+        self.input_data=torch.tensor(input_data)
+        self.output_data=torch.tensor(output_data)
+        self.idx2word_in={v:k for (k, v) in word2idx_in.items()}
+        self.idx2word_out={v:k for (k, v) in word2idx_out.items()}
+    
     def __len__(self):
-        return len(self.tokenized_data_in)
-
-    def word2idx_out(self):
-        # creating word2idx dict for output
-        return self.vocab_out.get_stoi()
-
-    def word2idx_input(self):
-        # creating word2idx dict for input
-        return self.vocab_in.get_stoi()
-
-    def __getitem__(self, index):
-
-        return (torch.tensor(self.data_in[index]), torch.tensor(self.data_out[index]))
-
-
-
-
-
-# Random split
-def random_split_fn(dataset, valid_range):
-    valid_size = int(len(dataset)*valid_range)
-
-    Train, Valid, Test = random_split(
-        dataset, [len(dataset)-(valid_size*2), valid_size, valid_size])
-    return Train, Valid, Test
-
-
-
+        return len(self.input_data)
+        
+    def __getitem__(self, idx):
+        
+        if self.output_data==None: # For Prediction we wont have output data
+            return self.input_data[idx]
+        else:
+            return (self.input_data[idx],self.output_data[idx])
+     
+     
+# Ranadom split
+def RandomSplit(data,valid_rate,test_rate):
+    
+    valid_size=int(valid_rate*len(data))
+    test_size=int(test_rate*len(data))
+    train_size=len(data)-(valid_size+test_size)
+    
+    Train,Valid,Test=random_split(data,[train_size,valid_size,test_size])
+    
+    return Train,Valid,Test
 
 # Dataloader
-def Dataloader_fn(train, valid, test, batch_size):
+def Dataloader(train,valid,test,batch_size):
+    
+    Train=DataLoader(train,batch_size,shuffle=True,drop_last=True)
+    Valid=DataLoader(valid,batch_size,shuffle=False,drop_last=True)
+    Test=DataLoader(test,batch_size,shuffle=False,drop_last=True)
+    
+    return Train,Valid,Test
 
-    train = DataLoader(dataset=train, batch_size=batch_size,
-                       shuffle=True, drop_last=True)
-    valid = DataLoader(dataset=valid, batch_size=batch_size,
-                       shuffle=False, drop_last=True)
-    test = DataLoader(dataset=test, batch_size=batch_size,
-                      shuffle=False, drop_last=True)
 
-    return train, valid, test
+        
+        

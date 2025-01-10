@@ -2,88 +2,89 @@ import torch
 import tqdm
 
 
-def train(Train_Dataloader,Valid_Dataloader,start_epochs,model,optimizer,loss_fn,devices,epochs,save_callbacks,checkpoint_path,Tensorboard):
+def Train(Train_dataloader,Valid_dataloader,EPOCH,Initial_epoch,Model,optimizer,loss_fn,devices,save_checkpoint_fn,checkpoint_path,Tensorboard):
     
-    print(f"Training is starting from {start_epochs+1}.epoch")
-    
-    for epoch in range(start_epochs,epochs):
-       
-        progress_bar=tqdm.tqdm(range(len(Train_Dataloader)),"Train Progress",leave=True)
+    for epoch in range(Initial_epoch,EPOCH):
         
-        correct_train=0.0
-        total_train=0.0
-        loss_train=0.0
+        progress_bar=tqdm.tqdm(range(len(Train_dataloader)),"Training Progress")
         
+        total_values_train=0
+        correct_values_train=0
+        loss_values_train=0
         
-        # Start Train       
-        for batch,(input_encoder,labels_Decoder) in enumerate(Train_Dataloader):
+        for batch_train,(input_data_train,output_data_train) in enumerate(Train_dataloader):
             
-            correct_train=0.0
-            total_train=0.0
-            loss_train=0.0
-
-            # We have input encoder and labels decoder
-            input_encoder=input_encoder.to(devices)
-            labels_Decoder=labels_Decoder.to(devices)
+            input_encoder_train=input_data_train.to(devices)
             
-            # Create Model Out
-            out,step=model(input_encoder,labels_Decoder)
+            output_decoder_train=output_data_train.to(devices)
             
-            # Forward and Backward
+            initial_input_decoder=torch.zeros_like(output_data_train).to(devices)
+            initial_input_decoder[:,0]=output_data_train[:,0] # Add start token to input decoder
+            
+            output_decoder_train=output_decoder_train[:,1:] # To remove start token from out decoder
             optimizer.zero_grad()
-            loss=loss_fn(out.reshape(out.size(0)*out.size(1),out.size(2)),labels_Decoder[:,:step+1].reshape(-1))  # we add stop token in output so we need stop token for loss in decoder targets
-            loss.backward(retain_graph=True)
+            output_train=Model(input_encoder_train,initial_input_decoder,output_decoder_train)
+            # We Clip target data as output transformer because we stopped model when we reached stop token but target values is padded max len so we need to clip.
+            output_decoder_train=output_decoder_train[:,:output_train.shape[1]]
+            
+            loss_train=loss_fn(output_train.reshape(-1,output_train.shape[-1]),output_decoder_train.reshape(-1))
+            loss_train.backward()
             optimizer.step()
             
-            # Calculate loss and accuracy
-            _,pred=torch.max(out,-1)
-            loss_train+=loss.item()
-            correct_train+=(pred==labels_Decoder[:,:step+1]).sum().item()
-            total_train+=(out.size(0)*out.size(1))    
             
-            progress_bar.update(1) # Progress bar update          
+            _,pred_train=torch.max(output_train,-1)
+            correct_values_train+=(pred_train==output_decoder_train).sum().item()
+            total_values_train+=(output_decoder_train.size(0)*output_decoder_train.size(1))
+            loss_values_train+=loss_train.item()
             
-            # Validation Step
-            if batch%5==4:
-                
-                correct_val=0.0
-                total_val=0.0
-                loss_val=0.0
-                
+            progress_bar.update(1)
+            
+            if batch_train %40==0 and batch_train>0:
                 with torch.no_grad():
                     
-                    for batch_val,(input_encoder_val,labels_Decoder_val) in enumerate(Valid_Dataloader):
+                    total_values_valid=0
+                    correct_values_valid=0
+                    loss_values_valid=0
+                    
+                    for batch_valid,(input_data_valid,output_data_valid) in enumerate(Valid_dataloader):
+                
+                        input_encoder_valid=input_data_valid.to(devices)
+                        output_decoder_valid=output_data_valid.to(devices)
                         
-                        labels_Decoder_val=labels_Decoder_val.to(devices)
-                        input_encoder_val=input_encoder_val.to(devices)            
+                        output_decoder_valid=output_decoder_valid[:,1:] # To remove start token from out decoder
                         
-                        out_val,step=model(input_encoder_val,labels_Decoder_val)
-                        loss_v=loss_fn(out_val.reshape(out_val.size(0)*out_val.size(1),out_val.size(2)),labels_Decoder_val[:,:step+1].reshape(-1))  # we didnt add stop token in out so we remote stop token in labels_decoder in loss
+                        output_valid=Model(input_encoder_valid,initial_input_decoder,output_decoder_valid)
+                        
+                        output_decoder_valid=output_decoder_valid[:,:output_valid.shape[1]]
+                        loss_valid=loss_fn(output_valid.reshape(-1,output_valid.shape[-1]),output_decoder_valid.reshape(-1))
+                        
+                        _,pred_valid=torch.max(output_valid,-1)
+                        correct_values_valid+=(pred_valid==output_decoder_valid).sum().item()
+                        total_values_valid+=(output_decoder_valid.size(0)*output_decoder_valid.size(1))
+                        loss_values_valid+=loss_valid.item()           
+                
+                progress_bar.set_postfix({"EPOCH":epoch,
+                                         "Batch":batch_train+1,
+                                         "Acc_Train":(correct_values_train/total_values_train)*100,
+                                         "Loss_Train":(loss_values_train/(batch_train+1)),
+                                         "Acc_Valid":(correct_values_valid/total_values_valid)*100,
+                                         "Loss_Valid":(loss_values_valid/(batch_valid+1))})
 
-                        _,pred_val=torch.max(out_val,-1)
-                        loss_val+=loss_v.item()
-                        correct_val+=(pred_val==labels_Decoder_val[:,:step+1]).sum().item()
-                        total_val+=(out_val.size(0)*out_val.size(1))               
-                        
-                # Progress bar update
-                progress_bar.set_postfix({"Loss_val":(loss_val/(batch_val+1)),
-                                          "Acc_Val":((100*correct_val/total_val)),
-                                          "Loss_Train":(loss_train/(batch+1)),
-                                          "Acc_Train":((100*correct_train/total_train))})
-                # Tensorboard Update
-                Tensorboard.add_scalars("Accuracy and Loss For Training",
-                                        {"Loss_val":(loss_val/(batch_val+1)),
-                                          "Acc_Val":((100*correct_val/total_val)),
-                                          "Loss_Train":(loss_train/(batch+1)),
-                                          "Acc_Train":((100*correct_train/total_train))},
-                                        global_step=(epoch+1)*(batch+1))                                                           
-                        
+        # Tensorboard
+        Tensorboard.add_scalar("Accuracy Train",(correct_values_train/total_values_train)*100,global_step=epoch)
+        Tensorboard.add_scalar("Loss Train",(loss_values_train/(batch_train+1)),global_step=epoch)
+        Tensorboard.add_scalar("Accuracy Valid",(correct_values_valid/total_values_valid)*100,global_step=epoch)
+        Tensorboard.add_scalar("Loss Valid",(loss_values_valid/(batch_valid+1)),global_step=epoch)
+        
+            
+        save_checkpoint_fn(epoch,optimizer,Model,checkpoint_path)
+    
+
+            
+            
+            
             
         
-        progress_bar.close()            
-        
-        # Saving Checkpoint every epochs  
-        save_callbacks(checkpoint_path,optimizer,model,epoch+1)
-        
-                        
-
+    
+    
+    

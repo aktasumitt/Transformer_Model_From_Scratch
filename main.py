@@ -1,116 +1,75 @@
-import dataset,Decoder,Encoder,Train,transformer,config,callbakcs,torch,test,prediction,Embedding
-import warnings
+import Layers,Encoder,Decoder,Transformer,dataset,config,train,Checkpoints,Test,Prediction
+import torch
 from torch.utils.tensorboard import SummaryWriter
 
-warnings.filterwarnings("ignore")
-torch.autograd.set_detect_anomaly(True)
 
-# Tensorboard
-Tensorboard_Writer=SummaryWriter()
-
-# Devices to use cuda
+# Devices
 devices=("cuda" if torch.cuda.is_available() else "cpu")
 
-   
-# Loading Datasets from scratch
-Turkish_Text,English_Text=dataset.Loading_Dataset(Text_Path=config.TEXT_PATH,
-                                                        start_range=config.START_RANGE,
-                                                        stop_range=config.STOP_RANGE)
 
-# Preprocess Texts:
-Tokenized_Turkish=dataset.Preproccess(max_len=config.MAX_LEN_SEQ,
-                                      language=config.LANGUAGE_IN,
-                                      pad_symbol=config.PAD_SYMBOL)(text=Turkish_Text)
-          
+# Tensorboard
+Tensorboard=SummaryWriter(config.TENSORBOARD_PATH,"Tensorboard Transformer Model")
 
-Tokenized_English=dataset.Preproccess(max_len=config.MAX_LEN_SEQ,
-                                      language=config.LANGUAGE_OUT,
-                                      stop_symbol=config.STOP_SYMBOL,
-                                      pad_symbol=config.PAD_SYMBOL)(text=English_Text)
+
+# Loading Data and Max Length of All Sentences:
+Turkish_sentences_list,English_sentences_list,MAX_LEN=dataset.Loading_Dataset(text_path=config.TEXT_PATH)
+
+
+# Tokenizing Data and Adding Start, Stop, and Pad Symbol
+turkish_tokenized=dataset.Preprocessing_Text(language="turkish",pad_symbol=config.PAD_TOKEN,max_len=MAX_LEN)(Turkish_sentences_list)
+english_tokenized=dataset.Preprocessing_Text(language="english",start_symbol=config.START_TOKEN,stop_symbol=config.STOP_TOKEN,pad_symbol=config.PAD_TOKEN,max_len=MAX_LEN)(English_sentences_list) 
+
+
+# Change tokens from word to idx
+Tokenized_ENG,WORD2IDX_DİCT_ENG=dataset.WORD2IDX(start_sym=config.START_TOKEN,stop_sym=config.STOP_TOKEN,pad_sym=config.PAD_TOKEN)(english_tokenized)
+Tokenized_TR,WORD2IDX_DİCT_TR=dataset.WORD2IDX(pad_sym=config.PAD_TOKEN)(turkish_tokenized)
+
+
+# Calculate max number of tokens
+NUM_TOKEN=max(len(WORD2IDX_DİCT_ENG),len(WORD2IDX_DİCT_TR))
+
 
 # Create Dataset
-Train_dataset=dataset.Create_Dataset(tokenized_data_in=Tokenized_Turkish,
-                                     tokenized_data_out=Tokenized_English)
+dataset_total=dataset.Dataset(input_data=Tokenized_TR,word2idx_in=WORD2IDX_DİCT_TR,output_data=Tokenized_ENG,word2idx_out=WORD2IDX_DİCT_ENG)
 
-# WORD to IDX DICTIONARIES
-W2IDX_IN=Train_dataset.word2idx_input()
-W2IDX_OUT=Train_dataset.word2idx_out()
 
-    
 # Random Split
-Train_dataset,Valid_dataset,Test_dataset=dataset.random_split_fn(dataset=Train_dataset,
-                                                                 valid_range=config.VALID_RANGE)
-
-# Create Dataloaders:
-Train_dataloader,Valid_Dataloader,Test_Dataloader=dataset.Dataloader_fn(train=Train_dataset,
-                                                                        valid=Valid_dataset,
-                                                                        test=Test_dataset,
-                                                                        batch_size=config.BATCH_SIZE)
-# Create Model:
-Model=transformer.Transformer_Model(d_model=config.D_MODEL,
-                                    Encoder_Model=Encoder.Encoder_Model,
-                                    Decoder_Model=Decoder.Decoder_Model,
-                                    Embeddig_Model=Embedding.Embedding_Model,
-                                    vocab_size_encoder=len(W2IDX_IN),
-                                    vocab_size_decoder=len(W2IDX_OUT),
-                                    num_heads=config.NUM_HEADS,
-                                    pad_idx=config.PAD_IDX,
-                                    max_seq_len_decoder=config.MAX_LEN_SEQ,
-                                    max_seq_len_encoder=config.MAX_LEN_SEQ,
-                                    devices=devices,
-                                    batch_size=config.BATCH_SIZE,
-                                    masking_value=config.MASKING_VALUE,
-                                    Nx=config.NX,
-                                    stop_token=W2IDX_IN[config.STOP_SYMBOL])
-Model.to(devices)
-Model.train()
+Train_Dataset,Valid_Dataset,Test_Dataset=dataset.RandomSplit(dataset_total,valid_rate=config.VALID_RATE,test_rate=config.TEST_RATE)
 
 
-# Create Optimizer and Loss_fn
-optimizers=torch.optim.Adam(params=Model.parameters(),lr=config.LEARNING_RATE,betas=config.BETAS,eps=config.EPSILON)
-loss_fn=torch.nn.CrossEntropyLoss()
+# Dataloader
+Train_Dataloader,Valid_Dataloader,Test_Dataloader=dataset.Dataloader(Train_Dataset,Valid_Dataset,Test_Dataset,batch_size=config.BATCH_SIZE)
 
 
-# Load Callbacks  
-if config.LOAD_CALLBACKS==True:
-    print("Callbacks are Loading...")
-    checkpoint=torch.load(f=config.CALLBACKS_PATH)
-    start_epoch=callbakcs.Load_Callbakcs(model=Model,optimizer=optimizers,checkpoint=checkpoint)  
-else:
-    start_epoch=0
-        
+# Model
+ModelTransformer=Transformer.Transformer(Encoder=Encoder.Encoder,Decoder=Decoder.Decoder,Embedding=Layers.Embedding,
+                                         PositionalEncoding=Layers.PositionalEncoding,MultiHeadAttention=Layers.MultiHeadAttention,
+                                         FeedForward=Layers.FeedForward,d_model=config.D_MODEL,dk_model=config.DK_MODEL,batch_size=config.BATCH_SIZE,
+                                         max_len=MAX_LEN,num_token=NUM_TOKEN,Nx=config.NX,devices=devices,
+                                         STOP_TOKEN=WORD2IDX_DİCT_ENG[config.STOP_TOKEN]).to(devices)
 
-# Training
+
+# Optimizer and Loss
+optimizer=torch.optim.Adam(params=ModelTransformer.parameters(),lr=config.LEARNING_RATE,betas=config.BETAS,eps=config.EPSILON)
+loss_fn=torch.nn.CrossEntropyLoss(label_smoothing=0.1)
+
+
+# Loading checkpoint if you have (if LOAD==True)
+INITIAL_EPOCH=Checkpoints.Load_Checkpoint(LOAD=config.LOAD_CHECKPOINT,checkpoint_dir=config.CHECKPOINT_PATH,model=ModelTransformer,optimizer=optimizer)
+
+
+# Train
 if config.TRAIN==True:
-    Train.train(Train_Dataloader=Train_dataloader,
-                Valid_Dataloader=Valid_Dataloader,
-                optimizer=optimizers,
-                loss_fn=loss_fn,
-                model=Model,
-                epochs=config.EPOCHS,
-                start_epochs=start_epoch,
-                devices=devices,
-                save_callbacks=callbakcs.Save_Callbacks,
-                checkpoint_path=config.CALLBACKS_PATH,
-                Tensorboard=Tensorboard_Writer)
+    train.Train(Train_dataloader=Train_Dataloader,Valid_dataloader=Valid_Dataloader,EPOCH=config.EPOCH,Initial_epoch=INITIAL_EPOCH,
+                Model=ModelTransformer,optimizer=optimizer,loss_fn=loss_fn,devices=devices,save_checkpoint_fn=Checkpoints.Save_Checkpoint,
+                checkpoint_path=config.CHECKPOINT_PATH,Tensorboard=Tensorboard)
 
-
-# TEST
+# Test
 if config.TEST==True:
-    test.Test(Model=Model,Test_dataloader=Test_Dataloader,loss_fn=loss_fn,devices=devices)
- 
+    Test.Test(Test_Dataloader=Test_Dataloader,devices=devices,Model=ModelTransformer,loss_fn=loss_fn)
 
-# PREDICTION   
+
+# Prediciton
 if config.PREDICTION==True:
-    translate=prediction.prediction(sentence=config.PREDICTION_SENTENCE,
-                                    Model=Model,
-                                    word2idx_in=W2IDX_IN,
-                                    word2_idx_out=W2IDX_OUT,
-                                    padding_len=config.MAX_LEN_SEQ,
-                                    pad_idx=config.PAD_IDX,
-                                    devices=devices,
-                                    batch_size=config.BATCH_SIZE)
-
-
-
-
+    translate=Prediction.Prediction(Sentence=config.PREDICTION_SENTENCE,max_len=MAX_LEN,PAD_TOKEN=config.PAD_TOKEN,START_TOKEN=config.START_TOKEN,
+                                    word2idx_dict_tr=WORD2IDX_DİCT_TR,batch_size=config.BATCH_SIZE,devices=devices)
